@@ -3,3 +3,9 @@
 node_modules
 @surreal7
 @unwarkz
+_bmad
+_bmad-output
+.agents
+.claude
+.cursor
+docs
