@@ -1,11 +1,29 @@
-.vscode
-.github
+# not output
+credentials
+nodes
+
+# Dependencies
 node_modules
+
+# IDE / Editor
+.vscode
+.cursor
+
+# GitHub
+.github
+
+# Reference implementations
 @surreal7
 @unwarkz
+
+# Build tools
 _bmad
 _bmad-output
+
+# Agent configs
 .agents
 .claude
 .cursor
+
+# Docs
 docs

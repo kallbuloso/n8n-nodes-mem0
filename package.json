@@ -1,0 +1,71 @@
+{
+	"name": "n8n-nodes-mem0",
+	"version": "2.0.0",
+	"description": "n8n community node for Mem0 – intelligent memory layer for AI applications",
+	"license": "MIT",
+	"author": {
+		"name": "kallbuloso"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kallbuloso/n8n-nodes-mem0.git"
+	},
+	"homepage": "https://github.com/kallbuloso/n8n-nodes-mem0#readme",
+	"bugs": {
+		"url": "https://github.com/kallbuloso/n8n-nodes-mem0/issues"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	},
+	"main": "index.js",
+	"scripts": {
+		"build": "tsc && gulp build:icons",
+		"dev": "tsc --watch",
+		"lint": "eslint nodes credentials --ext .ts",
+		"lintfix": "eslint nodes credentials --ext .ts --fix",
+		"format": "prettier nodes credentials --write",
+		"prepublishOnly": "npm run build"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"credentials": [
+			"dist/credentials/Mem0Api.credentials.js",
+			"dist/credentials/Mem0SelfHostedApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/Mem0/Mem0.node.js",
+			"dist/nodes/Mem0/Mem0Memory.node.js",
+			"dist/nodes/Mem0/Mem0AiTools.node.js"
+		]
+	},
+	"keywords": [
+		"n8n-community-node-package",
+		"n8n",
+		"mem0",
+		"memory",
+		"ai",
+		"llm",
+		"long-term-memory",
+		"semantic-search",
+		"vector-database",
+		"ai-agent",
+		"agent-id",
+		"langchain"
+	],
+	"devDependencies": {
+		"@types/node": "^20.14.0",
+		"@typescript-eslint/eslint-plugin": "^7.0.0",
+		"@typescript-eslint/parser": "^7.0.0",
+		"eslint": "^8.56.0",
+		"gulp": "^4.0.2",
+		"n8n-workflow": "^1.0.0",
+		"prettier": "^3.2.0",
+		"typescript": "^5.4.0"
+	},
+	"peerDependencies": {
+		"n8n-workflow": ">=1.0.0"
+	}
+}
