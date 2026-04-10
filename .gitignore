@@ -1,6 +1,8 @@
 # not output
 credentials
 nodes
+.npmrc
+build.js
 
 # Dependencies
 node_modules

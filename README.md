@@ -1,7 +1,7 @@
 # n8n-nodes-mem0
 
-[![npm version](https://img.shields.io/npm/v/n8n-nodes-mem0)](https://www.npmjs.com/package/n8n-nodes-mem0)
-[![npm downloads](https://img.shields.io/npm/dm/n8n-nodes-mem0)](https://www.npmjs.com/package/n8n-nodes-mem0)
+[![npm version](https://img.shields.io/npm/v/@amaralkarl/n8n-nodes-mem0)](https://www.npmjs.com/package/@amaralkarl/n8n-nodes-mem0)
+[![npm downloads](https://img.shields.io/npm/dm/@amaralkarl/n8n-nodes-mem0)](https://www.npmjs.com/package/@amaralkarl/n8n-nodes-mem0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 n8n community node package that integrates [Mem0](https://mem0.ai) — an intelligent memory layer for AI agents — into your n8n workflows.
@@ -26,13 +26,13 @@ Supports both the **Mem0 cloud** (mem0.ai) and **self-hosted** Mem0 instances.
 
 1. Open your n8n instance
 2. Go to **Settings → Community Nodes**
-3. Search for `n8n-nodes-mem0`
+3. Search for `@amaralkarl/n8n-nodes-mem0`
 4. Click **Install**
 
 ### Manual
 
 ```bash
-npm install n8n-nodes-mem0
+npm install @amaralkarl/n8n-nodes-mem0
 ```
 
 Then restart your n8n instance.

@@ -1,6 +1,6 @@
 {
-	"name": "n8n-nodes-mem0",
-	"version": "2.0.0",
+	"name": "@amaralkarl/n8n-nodes-mem0",
+	"version": "2.0.1",
 	"description": "n8n community node for Mem0 – intelligent memory layer for AI applications",
 	"license": "MIT",
 	"author": {
