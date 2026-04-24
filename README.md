@@ -1,12 +1,12 @@
-# n8n-nodes-mem0
+﻿# n8n-nodes-mem0
 
 [![npm version](https://img.shields.io/npm/v/@amaralkarl/n8n-nodes-mem0)](https://www.npmjs.com/package/@amaralkarl/n8n-nodes-mem0)
 [![npm downloads](https://img.shields.io/npm/dm/@amaralkarl/n8n-nodes-mem0)](https://www.npmjs.com/package/@amaralkarl/n8n-nodes-mem0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-n8n community node package that integrates [Mem0](https://mem0.ai) — an intelligent memory layer for AI agents — into your n8n workflows.
+n8n community node package that integrates [Mem0](https://mem0.ai) â€” an intelligent memory layer for AI agents â€” into your n8n workflows.
 
-Supports both the **Mem0 cloud** (mem0.ai) and **self-hosted** Mem0 instances.
+Supports **self-hosted Mem0 instances only**.
 
 ---
 
@@ -14,9 +14,9 @@ Supports both the **Mem0 cloud** (mem0.ai) and **self-hosted** Mem0 instances.
 
 | Node | Description |
 |---|---|
-| **Mem0** | Full CRUD node for managing memories, entities, organizations, projects, and config |
-| **Mem0 Chat Memory** | AI Agent memory source — supplies conversation history to an AI Agent node |
-| **Mem0 AI Tools** | AI Agent tools provider — exposes search, add, get, delete, and history as callable tools |
+| **Mem0** | Node for managing memories and self-hosted config/maintenance |
+| **Mem0 Chat Memory** | AI Agent memory source â€” supplies conversation history to an AI Agent node |
+| **Mem0 AI Tools** | AI Agent tools provider â€” exposes search, add, get, delete, and history as callable tools |
 
 ---
 
@@ -25,7 +25,7 @@ Supports both the **Mem0 cloud** (mem0.ai) and **self-hosted** Mem0 instances.
 ### Via Community Nodes UI (recommended)
 
 1. Open your n8n instance
-2. Go to **Settings → Community Nodes**
+2. Go to **Settings â†’ Community Nodes**
 3. Search for `@amaralkarl/n8n-nodes-mem0`
 4. Click **Install**
 
@@ -41,16 +41,6 @@ Then restart your n8n instance.
 
 ## Credential Setup
 
-### Cloud (mem0.ai)
-
-1. Sign up at [mem0.ai](https://mem0.ai) and obtain an API key
-2. In n8n, create a **Mem0 API** credential with:
-   - **API Key** (required)
-   - **Organization ID** (optional)
-   - **Project ID** (optional)
-
-### Self-Hosted
-
 1. Deploy a Mem0 OSS instance (see [mem0 docs](https://docs.mem0.ai/open-source/quickstart))
 2. In n8n, create a **Mem0 Self-Hosted API** credential with:
    - **Base URL** (e.g., `http://localhost:8000`)
@@ -62,11 +52,9 @@ Then restart your n8n instance.
 
 ### Mem0 (CRUD)
 
-General-purpose node for managing all Mem0 resources.
+General-purpose node for managing memories and self-hosted config/maintenance.
 
-**Authentication:** Cloud or Self-Hosted
-
-#### Memory Operations (Cloud & Self-Hosted)
+#### Memory Operations
 
 | Operation | Description |
 |---|---|
@@ -74,28 +62,12 @@ General-purpose node for managing all Mem0 resources.
 | Get | Retrieve a single memory by ID |
 | Get All | List all memories for a user/agent/run |
 | Search | Semantic search using v1 endpoint |
-| Search V2 | Advanced semantic search with filter rules (cloud only) |
 | Update | Update a memory's text or metadata |
 | Delete | Delete a specific memory by ID |
 | Delete All | Delete all memories for a user/agent/run |
 | History | Get the change history of a memory |
 
-#### Entity Operations (Cloud)
-
-Manage user, agent, app, and session entities.
-Operations: Create, Get, Get All, Update, Delete
-
-#### Organization Operations (Cloud)
-
-Manage organizations with name, slug, description, and metadata.
-Operations: Create, Get, Get All, Update, Delete
-
-#### Project Operations (Cloud)
-
-Manage projects within organizations.
-Operations: Create, Get, Get All, Update, Delete
-
-#### Config Operations (Self-Hosted)
+#### Config Operations
 
 | Operation | Description |
 |---|---|
@@ -124,10 +96,10 @@ Connect the **Memory** output to the AI Agent's memory input.
 | Hybrid | Combines semantic v2 + recent memories, scored with time-decay and MMR diversity |
 
 **Hybrid mode parameters:**
-- **Alpha** — weight of semantic relevance vs. recency (0–1, default 0.65)
-- **Half-life (hours)** — decay rate for time-based scoring (default 48h)
-- **Max Return** — maximum memories returned to the agent (default 30)
-- **MMR Lambda** — balance between relevance and diversity (default 0.5)
+- **Alpha** â€” weight of semantic relevance vs. recency (0â€“1, default 0.65)
+- **Half-life (hours)** â€” decay rate for time-based scoring (default 48h)
+- **Max Return** â€” maximum memories returned to the agent (default 30)
+- **MMR Lambda** â€” balance between relevance and diversity (default 0.5)
 
 **Session ID:** Automatically reads `runId`, `sessionId`, or `chatId` from the incoming node data, or you can define a custom key (supports n8n expressions).
 
@@ -155,12 +127,13 @@ All tools accept optional `user_id`, `agent_id`, and `run_id` overrides per call
 
 ## Self-Hosted Notes
 
-The self-hosted Mem0 instance does not use versioned API prefixes. This package automatically translates cloud endpoints:
+The self-hosted Mem0 instance does not use versioned API prefixes. This package automatically translates versioned endpoints:
 
-- `/v1/memories` → `/memories`
-- `/v2/memories/search/` → `/memories/search/`
+- `/v1/memories` â†’ `/memories`
+- `/v1/memories/search/` -> `/search`
+- `/v2/memories/search/` -> `/search`
 
-The Config operations (health, getConfig, switch, configure, reset) are only available for self-hosted instances.
+The Config operations (health, getConfig, switch, configure, reset) are available for self-hosted instances.
 
 ---
 

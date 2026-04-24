@@ -1,6 +1,5 @@
 # not output
-credentials
-nodes
+dist/
 .npmrc
 build.js
 

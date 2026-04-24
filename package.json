@@ -32,7 +32,6 @@
 	"n8n": {
 		"n8nNodesApiVersion": 1,
 		"credentials": [
-			"dist/credentials/Mem0Api.credentials.js",
 			"dist/credentials/Mem0SelfHostedApi.credentials.js"
 		],
 		"nodes": [
