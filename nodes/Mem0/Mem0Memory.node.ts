@@ -174,7 +174,8 @@ async function _loadWithRetrievalMode(
 		if (memParams.user_id) body.user_id = memParams.user_id;
 		if (memParams.agent_id) body.agent_id = memParams.agent_id;
 		if (memParams.run_id) body.run_id = memParams.run_id;
-		if (adv.topK) body.top_k = Number(adv.topK);
+		const limit = Number(adv.topK || 0);
+		if (limit > 0) body.limit = limit;
 		if (adv.rerank !== undefined) body.rerank = Boolean(adv.rerank);
 		if (typeof adv.fields === 'string' && adv.fields) {
 			body.fields = adv.fields.split(',').map((f: string) => f.trim());
@@ -189,7 +190,7 @@ async function _loadWithRetrievalMode(
 		}
 
 		const semRes = await mem0ApiRequest.call(ctx, 'POST', '/search', body);
-		const semMemories: IMem0Memory[] = extractResults(semRes);
+		const semMemories: IMem0Memory[] = extractResults(semRes).slice(0, limit > 0 ? limit : undefined);
 
 		if (retrievalMode === 'hybrid') {
 			// Fetch recent memories
@@ -353,7 +354,7 @@ export class Mem0Memory implements INodeType {
 				options: [
 					{ displayName: 'Run ID', name: 'runId', type: 'string', default: '' },
 					{
-						displayName: 'Top K', name: 'topK', type: 'number',
+						displayName: 'Limit', name: 'topK', type: 'number',
 						typeOptions: { minValue: 1 }, default: 25,
 						description: 'Number of memories to retrieve (semantic/hybrid modes)',
 					},
@@ -466,11 +467,7 @@ export class Mem0Memory implements INodeType {
 					}
 				},
 				async clear() {
-					try {
-						await mem0ApiRequest.call(self, 'DELETE', '/memories', {}, buildMemParams());
-					} catch {
-						/* ignore */
-					}
+					/* Intentionally no-op: do not let an agent-triggered clear delete persisted memories. */
 				},
 			},
 
@@ -538,11 +535,7 @@ export class Mem0Memory implements INodeType {
 			},
 
 			async clear() {
-				try {
-					await mem0ApiRequest.call(self, 'DELETE', '/memories', {}, buildMemParams());
-				} catch {
-					/* ignore */
-				}
+				/* Intentionally no-op: do not let an agent-triggered clear delete persisted memories. */
 			},
 		};
 
