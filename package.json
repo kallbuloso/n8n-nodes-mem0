@@ -27,7 +27,18 @@
 		"prepublishOnly": "npm run build"
 	},
 	"files": [
-		"dist"
+		"dist/credentials/Mem0SelfHostedApi.credentials.js",
+		"dist/nodes/Mem0/descriptions/ConfigDescription.js",
+		"dist/nodes/Mem0/descriptions/MemoryDescription.js",
+		"dist/nodes/Mem0/GenericFunctions.js",
+		"dist/nodes/Mem0/Mem0.node.js",
+		"dist/nodes/Mem0/Mem0AiTools.node.js",
+		"dist/nodes/Mem0/Mem0Memory.node.js",
+		"dist/nodes/Mem0/types.js",
+		"dist/nodes/Mem0/mem0.svg",
+		"index.js",
+		"README.md",
+		"package.json"
 	],
 	"n8n": {
 		"n8nNodesApiVersion": 1,

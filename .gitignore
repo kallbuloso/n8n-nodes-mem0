@@ -2,6 +2,20 @@
 dist/
 .npmrc
 build.js
+*.tgz
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
 
 # Dependencies
 node_modules
@@ -22,6 +36,8 @@ _bmad
 _bmad-output
 
 # Agent configs
+AGENTS.md
+CLAUDE.md
 .agents
 .claude
 .cursor

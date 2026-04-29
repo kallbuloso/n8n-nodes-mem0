@@ -3,10 +3,17 @@
 _bmad/
 _bmad-output/
 docs/
+AGENTS.md
+CLAUDE.md
 nodes/
 credentials/
 *.ts
 !*.d.ts
+*.tgz
+*.log
+.env
+.env.*
+.npmrc
 tsconfig.json
 .eslintrc.js
 gulpfile.js
@@ -17,3 +24,5 @@ build.js
 .vscode/
 .github/
 *.map
+*.d.ts.map
+package-lock.json
