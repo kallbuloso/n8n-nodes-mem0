@@ -53,12 +53,12 @@ let HumanMessage: any, AIMessage: any, SystemMessage: any;
 	};
 })();
 
-// ── Session key resolver ─────────────────────────────────────────────────────
-function resolveSessionKey(ctx: any, itemIndex: number): string {
-	const sessionIdType = ctx.getNodeParameter('sessionIdType', itemIndex, 'fromInput');
-	if (sessionIdType === 'customKey') {
-		return String(ctx.getNodeParameter('sessionKey', itemIndex, '') || `session_${ctx.getNode().id}`);
-	}
+function getConfiguredRunId(ctx: any, itemIndex: number): string {
+	return String(ctx.getNodeParameter('runId', itemIndex, '') || '').trim();
+}
+
+// ── Run ID resolver ──────────────────────────────────────────────────────────
+function resolveRunIdFallback(ctx: any, itemIndex: number): string {
 	try {
 		const items = ctx.getInputData();
 		const item = items && (items[itemIndex] || items[0]);
@@ -160,6 +160,65 @@ function memoryToContent(m: IMem0Memory): string {
 	return m.memory ?? m.text ?? m.content ?? JSON.stringify(m);
 }
 
+function memoryDedupeKey(m: IMem0Memory): string {
+	return idOf(m) || memoryToContent(m);
+}
+
+function mergeUniqueMemories(primary: IMem0Memory[], secondary: IMem0Memory[]): IMem0Memory[] {
+	const seen = new Set<string>();
+	const merged: IMem0Memory[] = [];
+	for (const memory of [...primary, ...secondary]) {
+		const key = memoryDedupeKey(memory);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		merged.push(memory);
+	}
+	return merged;
+}
+
+function messagesFromMemories(memories: IMem0Memory[], contextWindowLength: number): any[] {
+	let scoped = memories;
+	if (contextWindowLength > 0) {
+		scoped = scoped.slice(-contextWindowLength * 2);
+	}
+	return scoped.map((m) => {
+		const content = memoryToContent(m);
+		const role = (m.metadata && (m.metadata as any).role) || (m as any).role || 'system';
+		if (role === 'user' || role === 'human') return new HumanMessage(content);
+		if (role === 'assistant' || role === 'ai') return new AIMessage(content);
+		return new SystemMessage(content);
+	});
+}
+
+async function searchMemories(
+	ctx: ISupplyDataFunctions,
+	memParams: Record<string, string>,
+	adv: any,
+	query: string,
+): Promise<IMem0Memory[]> {
+	if (!query) return [];
+	const body: any = { query };
+	const searchAcrossSessions = adv.searchAcrossSessions !== false;
+	if (memParams.user_id) body.user_id = memParams.user_id;
+	if (memParams.agent_id) body.agent_id = memParams.agent_id;
+	if (memParams.run_id && !searchAcrossSessions) body.run_id = memParams.run_id;
+	const limit = Number(adv.topK || 0);
+	if (limit > 0) body.limit = limit;
+	if (adv.rerank !== undefined) body.rerank = Boolean(adv.rerank);
+	if (typeof adv.fields === 'string' && adv.fields) {
+		body.fields = adv.fields.split(',').map((f: string) => f.trim());
+	}
+	try {
+		const filters = typeof adv.filters === 'string' ? JSON.parse(adv.filters) : (adv.filters || {});
+		if (filters && Object.keys(filters).length > 0) body.filters = filters;
+	} catch {
+		/* ignore parse errors */
+	}
+
+	const semRes = await mem0ApiRequest.call(ctx, 'POST', '/search', body);
+	return extractResults(semRes).slice(0, limit > 0 ? limit : undefined);
+}
+
 // ── Module-level retrieval function (called from supplyData closures) ────────
 async function _loadWithRetrievalMode(
 	ctx: ISupplyDataFunctions,
@@ -170,27 +229,7 @@ async function _loadWithRetrievalMode(
 	contextWindowLength: number,
 ): Promise<any[]> {
 	if (retrievalMode === 'semantic' || retrievalMode === 'semanticV2' || retrievalMode === 'hybrid') {
-		const body: any = { query };
-		if (memParams.user_id) body.user_id = memParams.user_id;
-		if (memParams.agent_id) body.agent_id = memParams.agent_id;
-		if (memParams.run_id) body.run_id = memParams.run_id;
-		const limit = Number(adv.topK || 0);
-		if (limit > 0) body.limit = limit;
-		if (adv.rerank !== undefined) body.rerank = Boolean(adv.rerank);
-		if (typeof adv.fields === 'string' && adv.fields) {
-			body.fields = adv.fields.split(',').map((f: string) => f.trim());
-		}
-		if (retrievalMode === 'semanticV2' || retrievalMode === 'hybrid') {
-			try {
-				const filters = typeof adv.filters === 'string' ? JSON.parse(adv.filters) : (adv.filters || {});
-				body.filters = filters;
-			} catch {
-				/* ignore parse errors */
-			}
-		}
-
-		const semRes = await mem0ApiRequest.call(ctx, 'POST', '/search', body);
-		const semMemories: IMem0Memory[] = extractResults(semRes).slice(0, limit > 0 ? limit : undefined);
+		const semMemories = await searchMemories(ctx, memParams, adv, query);
 
 		if (retrievalMode === 'hybrid') {
 			// Fetch recent memories
@@ -222,30 +261,26 @@ async function _loadWithRetrievalMode(
 		return semMemories.map(m => new SystemMessage(memoryToContent(m)));
 	}
 
-	// basic or summary mode
+	// basic or joined-context mode
 	const qs: any = { ...memParams };
 	const res = await mem0ApiRequest.call(ctx, 'GET', '/memories', {}, qs);
 	let memories: IMem0Memory[] = extractResults(res);
-	if (adv.lastN && Number(adv.lastN) > 0) {
-		memories = memories.slice(-Number(adv.lastN));
+	const searchMode = adv.searchMode || 'never';
+	const shouldSearch = searchMode === 'always' || (searchMode === 'whenEmpty' && memories.length === 0);
+	if (shouldSearch) {
+		const searchResults = await searchMemories(ctx, memParams, adv, query);
+		memories = mergeUniqueMemories(memories, searchResults);
 	}
-
 	if (retrievalMode === 'summary') {
-		const text = memories.map(m => memoryToContent(m)).join('\n');
-		return [new SystemMessage(`Summary of memories:\n${text}`)];
+		let scoped = memories;
+		if (contextWindowLength > 0) {
+			scoped = scoped.slice(-contextWindowLength * 2);
+		}
+		const text = scoped.map(m => memoryToContent(m)).join('\n');
+		return [new SystemMessage(`Relevant memories:\n${text}`)];
 	}
 
-	// basic: use context window and preserve roles
-	if (contextWindowLength > 0) {
-		memories = memories.slice(-contextWindowLength * 2);
-	}
-	return memories.map((m) => {
-		const content = memoryToContent(m);
-		const role = (m.metadata && (m.metadata as any).role) || (m as any).role || 'system';
-		if (role === 'user' || role === 'human') return new HumanMessage(content);
-		if (role === 'assistant' || role === 'ai') return new AIMessage(content);
-		return new SystemMessage(content);
-	});
+	return messagesFromMemories(memories, contextWindowLength);
 }
 
 // ── Node class ───────────────────────────────────────────────────────────────
@@ -271,34 +306,6 @@ export class Mem0Memory implements INodeType {
 		},
 		properties: [
 			{
-				displayName: 'Session ID Type',
-				name: 'sessionIdType',
-				type: 'options',
-				options: [
-					{
-						name: 'Take from Previous Node Automatically',
-						value: 'fromInput',
-						description: 'Reads runId / sessionId / chatId from the incoming node data',
-					},
-					{
-						name: 'Define Below',
-						value: 'customKey',
-						description: 'Provide your own session key (supports expressions)',
-					},
-				],
-				default: 'fromInput',
-				description: 'How to determine the session identifier (run_id) used to scope chat history in Mem0',
-			},
-			{
-				displayName: 'Session Key',
-				name: 'sessionKey',
-				type: 'string',
-				default: '',
-				displayOptions: { show: { sessionIdType: ['customKey'] } },
-				description: 'Unique identifier for this conversation session. Maps to run_id in Mem0.',
-				placeholder: '={{ $json.message.chat.id }}',
-			},
-			{
 				displayName: 'Agent ID',
 				name: 'agentId',
 				type: 'string',
@@ -316,12 +323,20 @@ export class Mem0Memory implements INodeType {
 				placeholder: 'user_123',
 			},
 			{
+				displayName: 'Run ID',
+				name: 'runId',
+				type: 'string',
+				default: '',
+				description: 'Optional run/session ID. When empty, reads runId, sessionId, or chatId from incoming data.',
+				placeholder: '={{ $json.sessionId }}',
+			},
+			{
 				displayName: 'Retrieval Mode',
 				name: 'retrievalMode',
 				type: 'options',
 				options: [
 					{ name: 'Basic', value: 'basic', description: 'Returns raw recent memories' },
-					{ name: 'Summary', value: 'summary', description: 'Returns a joined text summary' },
+					{ name: 'Joined Context', value: 'summary', description: 'Returns loaded memories joined into one system message' },
 					{ name: 'Semantic', value: 'semantic', description: 'Semantic search with optional rerank' },
 					{ name: 'Semantic With Filters', value: 'semanticV2', description: 'Semantic search with filters' },
 					{ name: 'Hybrid', value: 'hybrid', description: 'Combines semantic search + recents with time-decay scoring and MMR diversity' },
@@ -343,7 +358,15 @@ export class Mem0Memory implements INodeType {
 				default: 10,
 				typeOptions: { minValue: 0 },
 				description: 'Number of recent messages to load (0 = all). Each exchange counts as 2.',
-				displayOptions: { show: { retrievalMode: ['basic'] } },
+				displayOptions: { show: { retrievalMode: ['basic', 'summary'] } },
+			},
+			{
+				displayName: 'Last N (Recents)',
+				name: 'lastN',
+				type: 'number',
+				default: 20,
+				description: 'Number of recent memories to blend with semantic search in hybrid mode',
+				displayOptions: { show: { retrievalMode: ['hybrid'] } },
 			},
 			{
 				displayName: 'Advanced',
@@ -352,11 +375,43 @@ export class Mem0Memory implements INodeType {
 				placeholder: 'Options',
 				default: {},
 				options: [
-					{ displayName: 'Run ID', name: 'runId', type: 'string', default: '' },
 					{
-						displayName: 'Limit', name: 'topK', type: 'number',
+						displayName: 'Search Augmentation',
+						name: 'searchMode',
+						type: 'options',
+						options: [
+							{
+								name: 'Never',
+								value: 'never',
+								description: 'Only load recent session memories',
+							},
+							{
+								name: 'When Context Is Empty',
+								value: 'whenEmpty',
+								description: 'Search historical memories only when no session context is found',
+							},
+							{
+								name: 'Always',
+								value: 'always',
+								description: 'Always add relevant search results to recent session memories',
+							},
+						],
+						default: 'never',
+						description: 'Controls whether basic and joined context modes add relevant search results',
+						displayOptions: { show: { '/retrievalMode': ['basic', 'summary'] } },
+					},
+					{
+						displayName: 'Search Across Sessions',
+						name: 'searchAcrossSessions',
+						type: 'boolean',
+						default: true,
+						description: 'Search by user and agent without restricting results to the current run/session',
+						displayOptions: { show: { '/retrievalMode': ['basic', 'summary', 'semantic', 'semanticV2', 'hybrid'] } },
+					},
+					{
+						displayName: 'Limit (topK)', name: 'topK', type: 'number',
 						typeOptions: { minValue: 1 }, default: 25,
-						description: 'Number of memories to retrieve (semantic/hybrid modes)',
+						description: 'Maximum number of memories to retrieve from search',
 					},
 					{
 						displayName: 'Rerank', name: 'rerank', type: 'boolean', default: true,
@@ -372,11 +427,6 @@ export class Mem0Memory implements INodeType {
 						displayName: 'Filters (JSON)', name: 'filters', type: 'json', default: '{}',
 						description: 'Advanced filter object for search',
 						displayOptions: { show: { '/retrievalMode': ['semanticV2', 'hybrid'] } },
-					},
-					{
-						displayName: 'Last N (recents)', name: 'lastN', type: 'number', default: 20,
-						description: 'Limit recent memories count',
-						displayOptions: { show: { '/retrievalMode': ['basic', 'summary', 'hybrid'] } },
 					},
 					{
 						displayName: 'Alpha (semantic weight)', name: 'alpha', type: 'number',
@@ -415,16 +465,23 @@ export class Mem0Memory implements INodeType {
 	// ── supplyData: called by AI Agent to get memory object ──────────────
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
 		const self: ISupplyDataFunctions = this;
-		const sessionKey = resolveSessionKey(this, itemIndex);
+		const configuredRunId = getConfiguredRunId(this, itemIndex);
+		const writeRunId = configuredRunId || resolveRunIdFallback(this, itemIndex);
 		const agentId = (this.getNodeParameter('agentId', itemIndex, '') as string) || '';
 		const userId = (this.getNodeParameter('userId', itemIndex, '') as string) || '';
 		const retrievalMode = (this.getNodeParameter('retrievalMode', itemIndex, 'basic') as string);
 		const contextWindowLength = Number(this.getNodeParameter('contextWindowLength', itemIndex, 10));
-		const adv = (this.getNodeParameter('advanced', itemIndex, {}) || {}) as any;
+		const advanced = this.getNodeParameter('advanced', itemIndex, {}) as any;
+		const adv = { ...(advanced || {}) };
+		if (retrievalMode === 'hybrid') {
+			adv.lastN = this.getNodeParameter('lastN', itemIndex, adv.lastN ?? 20);
+		}
 		const query = (this.getNodeParameter('query', itemIndex, '') as string) || '';
 
-		function buildMemParams(): Record<string, string> {
-			const p: Record<string, string> = { run_id: sessionKey };
+		function buildMemParams(includeFallbackRunId = false): Record<string, string> {
+			const p: Record<string, string> = {};
+			const runId = includeFallbackRunId ? writeRunId : configuredRunId;
+			if (runId) p.run_id = runId;
 			if (userId) p.user_id = userId;
 			if (agentId) p.agent_id = agentId;
 			return p;
@@ -448,7 +505,7 @@ export class Mem0Memory implements INodeType {
 							messages: [{ role: 'user', content: String(message) }],
 							infer: false,
 							metadata: { source: 'agent_interaction' },
-							...buildMemParams(),
+							...buildMemParams(true),
 						});
 					} catch {
 						/* ignore */
@@ -460,7 +517,7 @@ export class Mem0Memory implements INodeType {
 							messages: [{ role: 'assistant', content: String(message) }],
 							infer: false,
 							metadata: { source: 'agent_interaction' },
-							...buildMemParams(),
+							...buildMemParams(true),
 						});
 					} catch {
 						/* ignore */
@@ -526,7 +583,7 @@ export class Mem0Memory implements INodeType {
 						messages,
 						infer: false,
 						metadata: { source: 'agent_interaction' },
-						...buildMemParams(),
+						...buildMemParams(true),
 					});
 					try { self.addOutputData('ai_memory', runIndex, [[{ json: { action: 'saveContext', saved: messages.length } }]]); } catch { /* ignore */ }
 				} catch {
@@ -548,7 +605,7 @@ export class Mem0Memory implements INodeType {
 		return [items.map((_item, i) => ({
 			json: {
 				message: 'Mem0 Chat Memory is ready. Connect the "ai_memory" output to an AI Agent node.',
-				sessionKey: resolveSessionKey(this, i),
+				runId: getConfiguredRunId(this, i) || resolveRunIdFallback(this, i),
 			},
 		}))];
 	}
