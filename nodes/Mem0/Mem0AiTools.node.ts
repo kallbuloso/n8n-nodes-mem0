@@ -10,59 +10,29 @@ import type {
 import { NodeConnectionTypes } from 'n8n-workflow';
 import { mem0ApiRequest, extractResults } from './GenericFunctions';
 
-// ── Zod loading ──────────────────────────────────────────────────────────────
-let z: any = null;
-try { z = require('zod'); } catch { /* no zod */ }
-
-// ── DynamicStructuredTool loading ────────────────────────────────────────────
-let DynamicStructuredTool: any;
-(function () {
-	const candidates = ['@langchain/core/tools', 'langchain/tools'];
-	for (const mod of candidates) {
-		try {
-			const exported = require(mod);
-			if (exported && exported.DynamicStructuredTool) {
-				DynamicStructuredTool = exported.DynamicStructuredTool;
-				return;
-			}
-		} catch {
-			/* continue */
-		}
-	}
-	// Minimal shim satisfying the structured-tool contract used by n8n AI Agent
-	DynamicStructuredTool = class DynamicStructuredToolShim {
-		name: string;
-		description: string;
-		schema: any;
-		func: any;
-		returnDirect = false;
-		verbose = false;
-		lc_namespace = ['langchain_core', 'tools'];
-		lc_serializable = true;
-
-		constructor({ name, description, schema, func }: any) {
-			this.name = name;
-			this.description = description;
-			this.schema = schema || (z ? z.object({}).passthrough() : null);
-			this.func = func;
-		}
-		async invoke(input: any) {
-			const inputObj = typeof input === 'string'
-				? (() => { try { return JSON.parse(input); } catch { return { input }; } })()
-				: (input || {});
-			return this.func(inputObj);
-		}
-		async call(arg: any) {
-			return this.invoke(arg);
-		}
-		_type() { return 'structured'; }
-	};
-})();
+const { DynamicStructuredTool } = require('@langchain/core/tools');
 
 // ── Helper types ─────────────────────────────────────────────────────────────
-function strOpt(desc: string) { return z ? z.string().optional().describe(desc) : undefined; }
-function numOpt(desc: string) { return z ? z.number().optional().describe(desc) : undefined; }
-function recOpt(desc: string) { return z ? z.record(z.any()).optional().describe(desc) : undefined; }
+function jsonSchema(properties: Record<string, any>, required: string[] = []) {
+	return {
+		type: 'object',
+		properties,
+		required,
+		additionalProperties: false,
+	};
+}
+
+function stringProp(description: string) {
+	return { type: 'string', description };
+}
+
+function numberProp(description: string) {
+	return { type: 'number', description };
+}
+
+function objectProp(description: string) {
+	return { type: 'object', description, additionalProperties: true };
+}
 
 // ── Node class ───────────────────────────────────────────────────────────────
 export class Mem0AiTools implements INodeType {
@@ -83,17 +53,11 @@ export class Mem0AiTools implements INodeType {
 		codex: {
 			categories: ['AI'],
 			subcategories: { AI: ['Tools', 'Agents & LLMs'] },
-			resources: { primaryDocumentation: [{ url: 'https://docs.mem0.ai/' }] },
+			resources: {
+				primaryDocumentation: [{ url: 'https://docs.mem0.ai/open-source/features/rest-api' }],
+			},
 		},
 		properties: [
-			{
-				displayName: 'User ID',
-				name: 'userId',
-				type: 'string',
-				default: '',
-				description: 'Default user ID to scope all memory operations. Can be overridden per tool call.',
-				placeholder: 'user_123',
-			},
 			{
 				displayName: 'Agent ID',
 				name: 'agentId',
@@ -101,6 +65,14 @@ export class Mem0AiTools implements INodeType {
 				default: '',
 				description: 'Optional agent ID to scope memories to a specific agent',
 				placeholder: 'my_agent',
+			},
+			{
+				displayName: 'User ID',
+				name: 'userId',
+				type: 'string',
+				default: '',
+				description: 'Default user ID to scope all memory operations. Can be overridden per tool call.',
+				placeholder: 'user_123',
 			},
 			{
 				displayName: 'Run ID',
@@ -141,7 +113,7 @@ export class Mem0AiTools implements INodeType {
 				displayOptions: { show: { enabledTools: ['search'] } },
 				options: [
 					{
-						displayName: 'Top K',
+						displayName: 'Limit (topK)',
 						name: 'topK',
 						type: 'number',
 						typeOptions: { minValue: 1 },
@@ -207,15 +179,16 @@ export class Mem0AiTools implements INodeType {
 			tools.push(new DynamicStructuredTool({
 				name: 'mem0_search_memory',
 				description: 'Search Mem0 memories using semantic similarity. Returns relevant memory objects.',
-				schema: z ? z.object({
-					query: z.string().describe('Natural language search query'),
-					user_id: strOpt('Override the default user ID'),
-					agent_id: strOpt('Override the default agent ID'),
-					run_id: strOpt('Override the default run/session ID'),
-					top_k: numOpt(`Max results to return (default: ${topKDefault})`),
-					filters: recOpt('Additional filters as key-value pairs'),
-				}) : null,
-				func: async ({ query, user_id, agent_id, run_id, top_k, filters }: any = {}) => {
+				schema: jsonSchema({
+					query: stringProp('Natural language search query'),
+					user_id: stringProp('Override the default user ID'),
+					agent_id: stringProp('Override the default agent ID'),
+					run_id: stringProp('Override the default run/session ID'),
+					limit: numberProp(`Max results to return (default: ${topKDefault})`),
+					top_k: numberProp('Legacy alias for limit'),
+					filters: objectProp('Additional filters as key-value pairs'),
+				}, ['query']),
+				func: async ({ query, user_id, agent_id, run_id, limit, top_k, filters }: any = {}) => {
 					const runIndex = startToolRun({ tool: 'mem0_search_memory', query, user_id: user_id || userId });
 					log('debug', '[Mem0] mem0_search_memory called', { query });
 					try {
@@ -223,11 +196,15 @@ export class Mem0AiTools implements INodeType {
 						if (user_id) body.user_id = user_id;
 						if (agent_id) body.agent_id = agent_id;
 						if (run_id) body.run_id = run_id;
-						body.top_k = top_k != null ? Number(top_k) : Number(topKDefault);
+						const effectiveLimit = Number(limit ?? top_k ?? topKDefault);
+						if (effectiveLimit > 0) body.limit = effectiveLimit;
 						if (searchOptions.rerank !== undefined) body.rerank = Boolean(searchOptions.rerank);
 						if (filters) body.filters = filters;
 						const result = await mem0ApiRequest.call(self, 'POST', '/search', body);
-						const memories = extractResults(result);
+						const memories = extractResults(result).slice(
+							0,
+							effectiveLimit > 0 ? effectiveLimit : undefined,
+						);
 						const observationResult = { memories, count: memories.length };
 						endToolRun(runIndex, observationResult);
 						return JSON.stringify(memories);
@@ -245,14 +222,18 @@ export class Mem0AiTools implements INodeType {
 			tools.push(new DynamicStructuredTool({
 				name: 'mem0_add_memory',
 				description: 'Save a new memory or conversation turn to Mem0. Returns the saved memory object.',
-				schema: z ? z.object({
-					content: z.string().describe('Text content to remember'),
-					role: strOpt('"user" | "assistant" | "system" (default: "user")'),
-					user_id: strOpt('Override the default user ID'),
-					agent_id: strOpt('Override the default agent ID'),
-					run_id: strOpt('Override the default run/session ID'),
-					metadata: recOpt('Additional metadata tags as key-value pairs'),
-				}) : null,
+				schema: jsonSchema({
+					content: stringProp('Text content to remember'),
+					role: {
+						type: 'string',
+						description: '"user" | "assistant" | "system" (default: "user")',
+						enum: ['user', 'assistant', 'system'],
+					},
+					user_id: stringProp('Override the default user ID'),
+					agent_id: stringProp('Override the default agent ID'),
+					run_id: stringProp('Override the default run/session ID'),
+					metadata: objectProp('Additional metadata tags as key-value pairs'),
+				}, ['content']),
 				func: async ({ content, role, user_id, agent_id, run_id, metadata }: any = {}) => {
 					const runIndex = startToolRun({ tool: 'mem0_add_memory', content, role: role || 'user' });
 					try {
@@ -278,11 +259,11 @@ export class Mem0AiTools implements INodeType {
 			tools.push(new DynamicStructuredTool({
 				name: 'mem0_get_all_memories',
 				description: 'Retrieve all stored memories for a user from Mem0. Returns an array of memory objects.',
-				schema: z ? z.object({
-					user_id: strOpt('Override the default user ID'),
-					agent_id: strOpt('Filter by agent ID'),
-					run_id: strOpt('Filter by session/run ID'),
-				}) : null,
+				schema: jsonSchema({
+					user_id: stringProp('Override the default user ID'),
+					agent_id: stringProp('Filter by agent ID'),
+					run_id: stringProp('Filter by session/run ID'),
+				}),
 				func: async ({ user_id, agent_id, run_id }: any = {}) => {
 					const runIndex = startToolRun({ tool: 'mem0_get_all_memories', user_id: user_id || userId });
 					try {
@@ -310,9 +291,9 @@ export class Mem0AiTools implements INodeType {
 			tools.push(new DynamicStructuredTool({
 				name: 'mem0_delete_memory',
 				description: 'Delete a specific memory from Mem0 by its ID. Returns a confirmation message.',
-				schema: z ? z.object({
-					memory_id: z.string().describe('The unique ID of the memory to delete'),
-				}) : null,
+				schema: jsonSchema({
+					memory_id: stringProp('The unique ID of the memory to delete'),
+				}, ['memory_id']),
 				func: async ({ memory_id }: any = {}) => {
 					const runIndex = startToolRun({ tool: 'mem0_delete_memory', memory_id });
 					try {
@@ -339,9 +320,9 @@ export class Mem0AiTools implements INodeType {
 			tools.push(new DynamicStructuredTool({
 				name: 'mem0_get_memory_history',
 				description: 'Get the change history of a specific memory from Mem0. Returns an array of history entries.',
-				schema: z ? z.object({
-					memory_id: z.string().describe('The unique ID of the memory'),
-				}) : null,
+				schema: jsonSchema({
+					memory_id: stringProp('The unique ID of the memory'),
+				}, ['memory_id']),
 				func: async ({ memory_id }: any = {}) => {
 					const runIndex = startToolRun({ tool: 'mem0_get_memory_history', memory_id });
 					try {
@@ -351,9 +332,10 @@ export class Mem0AiTools implements INodeType {
 							return JSON.stringify(errObj);
 						}
 						const result = await mem0ApiRequest.call(self, 'GET', `/memories/${memory_id}/history`);
-						const observationResult = Array.isArray(result) ? { history: result, count: result.length } : result;
+						const history = extractResults(result);
+						const observationResult = { history, count: history.length };
 						endToolRun(runIndex, observationResult);
-						return JSON.stringify(result);
+						return JSON.stringify(history);
 					} catch (err: any) {
 						const errObj = { error: err.message || String(err) };
 						endToolRun(runIndex, errObj);
