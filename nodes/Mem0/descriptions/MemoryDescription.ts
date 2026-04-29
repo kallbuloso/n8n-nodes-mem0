@@ -43,18 +43,18 @@ export const memoryFields: INodeProperties[] = [
 		type: 'string',
 		default: '',
 		displayOptions: {
-			show: { resource: ['memory'], operation: ['add', 'getAll', 'deleteAll', 'search'] },
+			show: { resource: ['memory'], operation: ['add', 'getAll', 'deleteAll', 'search', 'searchV2'] },
 		},
 		description: 'Identifier of the AI agent/assistant that is interacting',
 		placeholder: 'sales_agent',
 	},
 	{
-		displayName: 'Session ID',
+		displayName: 'Run ID',
 		name: 'runId',
 		type: 'string',
 		default: '',
 		displayOptions: {
-			show: { resource: ['memory'], operation: ['add', 'getAll', 'deleteAll', 'search'] },
+			show: { resource: ['memory'], operation: ['add', 'getAll', 'deleteAll', 'search', 'searchV2'] },
 		},
 		description: 'Identifier of the current session/run',
 		placeholder: 'session_2024_001',
@@ -232,7 +232,7 @@ export const memoryFields: INodeProperties[] = [
 		},
 		options: [
 			{
-				displayName: 'Number of Results',
+				displayName: 'Limit (topK)',
 				name: 'topK',
 				type: 'number',
 				default: 10,

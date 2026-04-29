@@ -24,7 +24,7 @@ export interface IMem0MemoryParams {
 
 export interface IMem0SearchBody extends IMem0MemoryParams {
 	query: string;
-	top_k?: number;
+	limit?: number;
 	rerank?: boolean;
 	fields?: string[];
 	filters?: Record<string, any>;

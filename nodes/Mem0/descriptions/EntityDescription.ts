@@ -126,7 +126,7 @@ export const entityFields: INodeProperties[] = [
 					{ name: 'User', value: 'user' },
 					{ name: 'Agent', value: 'agent' },
 					{ name: 'Application', value: 'app' },
-					{ name: 'Session', value: 'run' },
+					{ name: 'Run', value: 'run' },
 				],
 				default: 'user',
 			},

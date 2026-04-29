@@ -5,7 +5,12 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import { mem0ApiRequest, buildKeyValueFromCollection, normalizeFilterValue } from './GenericFunctions';
+import {
+	mem0ApiRequest,
+	buildKeyValueFromCollection,
+	normalizeFilterValue,
+	extractResults,
+} from './GenericFunctions';
 import { memoryOperations, memoryFields } from './descriptions/MemoryDescription';
 import { configOperations, configFields } from './descriptions/ConfigDescription';
 
@@ -15,7 +20,7 @@ export class Mem0 implements INodeType {
 		name: 'mem0',
 		icon: 'file:mem0.svg',
 		group: ['transform'],
-		documentationUrl: 'https://docs.mem0.ai/',
+		documentationUrl: 'https://docs.mem0.ai/open-source/features/rest-api',
 		version: 1,
 		description: 'Interact with the Mem0 API – intelligent memory layer for AI',
 		defaults: { name: 'Mem0' },
@@ -31,7 +36,7 @@ export class Mem0 implements INodeType {
 				Memory: ['AI Memory', 'Persistent Storage'],
 			},
 			resources: {
-				primaryDocumentation: [{ url: 'https://docs.mem0.ai/' }],
+				primaryDocumentation: [{ url: 'https://docs.mem0.ai/open-source/features/rest-api' }],
 			},
 		},
 		properties: [
@@ -108,11 +113,7 @@ export class Mem0 implements INodeType {
 						if (runId) qs.run_id = runId;
 
 						const response = await mem0ApiRequest.call(this, 'GET', '/memories', {}, qs);
-						if (Array.isArray(response)) {
-							for (const item of response) returnData.push({ json: item });
-						} else {
-							returnData.push({ json: response });
-						}
+						for (const item of extractResults(response)) returnData.push({ json: item });
 					} else if (operation === 'delete') {
 						const memoryId = this.getNodeParameter('memoryId', i) as string;
 						const response = await mem0ApiRequest.call(this, 'DELETE', `/memories/${memoryId}`);
@@ -149,7 +150,8 @@ export class Mem0 implements INodeType {
 						if (userId) body.user_id = userId;
 						if (agentId) body.agent_id = agentId;
 						if (runId) body.run_id = runId;
-						if (options.topK) body.top_k = options.topK;
+						const limit = Number(options.topK || 0);
+						if (limit > 0) body.limit = limit;
 						if (options.rerank !== undefined) body.rerank = options.rerank;
 						if (typeof options.fields === 'string' && options.fields) {
 							body.fields = options.fields.split(',').map((f: string) => f.trim());
@@ -158,15 +160,16 @@ export class Mem0 implements INodeType {
 						if (metaFilter) body.metadata = metaFilter;
 
 						const response = await mem0ApiRequest.call(this, 'POST', '/search', body);
-						if (Array.isArray(response)) {
-							for (const item of response) returnData.push({ json: item });
-						} else {
-							returnData.push({ json: response });
+						for (const item of extractResults(response).slice(0, limit > 0 ? limit : undefined)) {
+							returnData.push({ json: item });
 						}
 					} else if (operation === 'searchV2') {
 						const query = this.getNodeParameter('query', i) as string;
 						const userId = this.getNodeParameter('userId', i, '') as string;
+						const agentId = this.getNodeParameter('agentId', i, '') as string;
+						const runId = this.getNodeParameter('runId', i, '') as string;
 						const options = this.getNodeParameter('options', i, {}) as any;
+						const limit = Number(options.topK || 0);
 
 						const rules: any[] = options.filters?.rules ?? [];
 						const operatorMap: Record<string, string> = {
@@ -189,28 +192,25 @@ export class Mem0 implements INodeType {
 							}
 						}
 
-						const body: any = { query, filters: andFilters.length ? { AND: andFilters } : {} };
+						const body: any = { query };
 						if (userId) body.user_id = userId;
-						if (options.topK) body.top_k = options.topK;
+						if (agentId) body.agent_id = agentId;
+						if (runId) body.run_id = runId;
+						if (andFilters.length) body.filters = { AND: andFilters };
+						if (limit > 0) body.limit = limit;
 						if (options.rerank !== undefined) body.rerank = options.rerank;
 						if (typeof options.fields === 'string' && options.fields.trim()) {
 							body.fields = options.fields.split(',').map((f: string) => f.trim()).filter((f: string) => f.length);
 						}
 
 						const response = await mem0ApiRequest.call(this, 'POST', '/search', body);
-						if (Array.isArray(response)) {
-							for (const item of response) returnData.push({ json: item });
-						} else {
-							returnData.push({ json: response });
+						for (const item of extractResults(response).slice(0, limit > 0 ? limit : undefined)) {
+							returnData.push({ json: item });
 						}
 					} else if (operation === 'history') {
 						const memoryId = this.getNodeParameter('memoryId', i) as string;
 						const response = await mem0ApiRequest.call(this, 'GET', `/memories/${memoryId}/history`);
-						if (Array.isArray(response)) {
-							for (const item of response) returnData.push({ json: item });
-						} else {
-							returnData.push({ json: response });
-						}
+						for (const item of extractResults(response)) returnData.push({ json: item });
 					}
 				}
 				// ── ENTITY ───────────────────────────────────────────────
